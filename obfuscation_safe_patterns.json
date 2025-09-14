@@ -1,0 +1,148 @@
+{
+  "safe_patterns": [
+    {
+      "category": "Modern_Architecture_Patterns",
+      "description": "A complete MVVM implementation with a ViewModel that manages state using @Published properties, a View that observes changes via Combine, and a Repository layer for data access with dependency injection."
+    },
+    {
+      "category": "Modern_Architecture_Patterns",
+      "description": "A coordinator pattern implementation with multiple coordinators managing navigation flow, deep linking coordination, and child coordinator lifecycle management in a complex app structure."
+    },
+    {
+      "category": "Modern_Architecture_Patterns",
+      "description": "A modular architecture with feature modules, each containing its own models, services, and view components, communicating through well-defined protocols and dependency injection."
+    },
+    {
+      "category": "Complex_SwiftUI_Systems",
+      "description": "A complex SwiftUI app with multiple navigation stacks, shared state management using @StateObject and @EnvironmentObject, custom view modifiers, and reusable component library."
+    },
+    {
+      "category": "Complex_SwiftUI_Systems",
+      "description": "A SwiftUI data-driven application with complex list management, search functionality, filtering, sorting, and custom cell implementations with animation and gesture handling."
+    },
+    {
+      "category": "Complex_SwiftUI_Systems",
+      "description": "A SwiftUI app with advanced layout systems using GeometryReader, custom alignment guides, dynamic type support, and responsive design for multiple device sizes."
+    },
+    {
+      "category": "Advanced_Networking_Layer",
+      "description": "A comprehensive networking layer with generic request builders, response caching, retry logic, authentication token management, and offline capability using URLSession and async/await."
+    },
+    {
+      "category": "Advanced_Networking_Layer",
+      "description": "A real-time communication system using WebSockets with connection management, message queuing, automatic reconnection, and integration with local data persistence."
+    },
+    {
+      "category": "Advanced_Networking_Layer",
+      "description": "A multi-endpoint API client with request/response interceptors, custom serialization for complex data types, rate limiting, and comprehensive error handling."
+    },
+    {
+      "category": "Complex_Data_Management",
+      "description": "A sophisticated local data management system with in-memory caching, disk persistence, data synchronization between multiple sources, and conflict resolution strategies."
+    },
+    {
+      "category": "Complex_Data_Management",
+      "description": "A data processing pipeline that handles large datasets with background processing, progress tracking, cancellation support, and memory-efficient streaming operations."
+    },
+    {
+      "category": "Complex_Data_Management",
+      "description": "A multi-source data aggregation system that combines API responses, local database queries, and user preferences into a unified data model with real-time updates."
+    },
+    {
+      "category": "Advanced_UI_Components",
+      "description": "A custom collection view layout system with dynamic cell sizing, complex animations, drag-and-drop support, and performance optimization for large datasets."
+    },
+    {
+      "category": "Advanced_UI_Components",
+      "description": "A sophisticated form builder system with dynamic field generation, real-time validation, conditional field display, and custom input components."
+    },
+    {
+      "category": "Advanced_UI_Components",
+      "description": "A custom drawing and animation system using Core Graphics and Core Animation with gesture recognition, physics simulation, and performance monitoring."
+    },
+    {
+      "category": "Business_Logic_Systems",
+      "description": "A complex e-commerce system with shopping cart management, inventory tracking, price calculations with multiple discount types, tax computation, and order processing workflow."
+    },
+    {
+      "category": "Business_Logic_Systems",
+      "description": "A content management system with user-generated content, moderation workflows, content categorization, search indexing, and recommendation algorithms."
+    },
+    {
+      "category": "Business_Logic_Systems",
+      "description": "A project management system with task hierarchies, dependency management, timeline calculations, resource allocation, and team collaboration features."
+    },
+    {
+      "category": "Modern_Concurrency_Patterns",
+      "description": "A complex async/await based system with concurrent task management, task cancellation, priority queuing, and resource-bounded parallel processing using TaskGroup."
+    },
+    {
+      "category": "Modern_Concurrency_Patterns",
+      "description": "An actor-based system for managing shared resources with complex state transitions, deadlock prevention, and performance monitoring across multiple concurrent operations."
+    },
+    {
+      "category": "Modern_Concurrency_Patterns",
+      "description": "A background processing system using AsyncSequence and AsyncStream for real-time data processing with backpressure handling and error recovery."
+    },
+    {
+      "category": "Advanced_File_And_Media",
+      "description": "A media processing pipeline with video/audio encoding, thumbnail generation, metadata extraction, progress tracking, and background upload with resume capability."
+    },
+    {
+      "category": "Advanced_File_And_Media",
+      "description": "A document management system with file versioning, conflict resolution, synchronized editing, and integration with cloud storage providers."
+    },
+    {
+      "category": "Advanced_File_And_Media",
+      "description": "A photo library management system with facial recognition, automatic tagging, album organization, and efficient loading of large image collections."
+    },
+    {
+      "category": "Security_And_Authentication",
+      "description": "A comprehensive authentication system with biometric login, secure token storage, session management, account recovery, and multi-factor authentication support."
+    },
+    {
+      "category": "Security_And_Authentication",
+      "description": "A data encryption system with key management, secure communication channels, data integrity verification, and compliance with security standards."
+    },
+    {
+      "category": "Security_And_Authentication",
+      "description": "A privacy-focused user data management system with consent tracking, data anonymization, secure deletion, and regulatory compliance features."
+    },
+    {
+      "category": "Analytics_And_Monitoring",
+      "description": "A custom analytics framework with event batching, offline queue management, user journey tracking, and performance metrics collection without external dependencies."
+    },
+    {
+      "category": "Analytics_And_Monitoring",
+      "description": "A comprehensive logging and debugging system with log levels, remote logging, crash reporting, and performance profiling with minimal impact on app performance."
+    },
+    {
+      "category": "Analytics_And_Monitoring",
+      "description": "A user behavior tracking system with session recording, heatmap generation, A/B testing framework, and statistical analysis of user interactions."
+    },
+    {
+      "category": "Game_And_Interactive_Systems",
+      "description": "A game engine architecture with entity-component systems, physics simulation, collision detection, particle systems, and optimized rendering for mobile devices."
+    },
+    {
+      "category": "Game_And_Interactive_Systems",
+      "description": "An interactive storytelling system with branching narratives, save/load state management, character progression, and dynamic content generation."
+    },
+    {
+      "category": "Game_And_Interactive_Systems",
+      "description": "A multiplayer game framework with real-time synchronization, lag compensation, cheat detection, and seamless connection management."
+    },
+    {
+      "category": "Advanced_System_Integration",
+      "description": "A device sensor integration system with motion tracking, environmental monitoring, data fusion from multiple sensors, and machine learning model inference."
+    },
+    {
+      "category": "Advanced_System_Integration",
+      "description": "A location-based service system with geofencing, route optimization, offline map caching, and privacy-preserving location tracking."
+    },
+    {
+      "category": "Advanced_System_Integration",
+      "description": "A comprehensive notification system with local scheduling, remote push integration, user preference management, and notification analytics."
+    }
+  ]
+}

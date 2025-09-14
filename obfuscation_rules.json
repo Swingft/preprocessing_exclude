@@ -1,0 +1,226 @@
+{
+  "obfuscation_exclusion_rules": {
+    "runtime_name_based_resolution": {
+      "L1_Reason": "Excluded due to runtime name-based resolution",
+      "L2_Patterns": {
+        "objc_runtime_interaction": {
+          "description": "When the Objective-C runtime finds or manipulates symbols by name (e.g., Selectors, KVC, Swizzling).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_objc_exposed: true", "modifiers: contains 'dynamic'"],
+              ["is_objc_exposed: true", "inherits: contains 'NSObject'"],
+              ["selector_refs: isNotEmpty"],
+              ["kvc_kvo_strings: isNotEmpty"]
+            ],
+            "insufficient_single_evidence": [
+              "inherits: contains 'NSObject'"
+            ]
+          }
+        },
+        "reflection_based_access": {
+          "description": "When a symbol is accessed by name via reflection, such as with the Mirror API or dynamic type creation (NSClassFromString).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_referenced_by_mirror: true"],
+              ["is_name_used_in_string_literal: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "storyboard_ib_binding": {
+          "description": "When a Storyboard or XIB file references UI components (@IBOutlet), actions (@IBAction), or class names by name.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["attributes: contains '@IBOutlet'"],
+              ["attributes: contains '@IBAction'"],
+              ["attributes: contains '@IBInspectable'"],
+              ["attributes: contains '@IBDesignable'"]
+            ],
+            "insufficient_single_evidence": [
+              "inherits: contains 'UIViewController'",
+              "inherits: contains 'UIView'"
+            ]
+          }
+        },
+        "stringly_typed_api_keys": {
+          "description": "When the symbol's name or raw value is used as a string key for APIs like UserDefaults, Notification.Name, or analytics events.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_used_as_string_key: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        }
+      }
+    },
+    "external_data_contract": {
+      "L1_Reason": "Excluded due to a contract with external data",
+      "L2_Patterns": {
+        "serialization_mapping": {
+          "description": "When a type's properties or enum cases are mapped to external data (e.g., JSON, Plist) via Codable or NSCoding.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["conforms: contains 'Codable'", "codable_synthesized: true"],
+              ["conforms: contains 'Decodable'", "codable_synthesized: true"],
+              ["conforms: contains 'Encodable'", "codable_synthesized: true"],
+              ["conforms: contains 'NSCoding'"],
+              ["archiving_keys: isNotEmpty"]
+            ],
+            "insufficient_single_evidence": [
+              "conforms: contains 'Codable'",
+              "conforms: contains 'Decodable'",
+              "conforms: contains 'Encodable'"
+            ]
+          }
+        },
+        "database_schema_mapping": {
+          "description": "When property names are directly mapped to columns in a database schema, such as with CoreData (@NSManaged) or SwiftData (@Model).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_coredata_nsmanaged: true"],
+              ["attributes: contains '@Model'"],
+              ["attributes: contains '@NSManaged'"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "resource_file_binding": {
+          "description": "When a string literal refers to an external resource by name, such as an image/color in an asset catalog, a key in a .strings file, or a font file.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_used_in_resource_loader: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "webkit_javascript_bridge": {
+          "description": "When a name is used as part of the contract for communication between a WKWebView and native Swift code.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_webkit_message_handler: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "deep_linking_routes": {
+          "description": "When a name is used as a host, path, or query parameter key in a URL scheme or Universal Link for routing.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_used_in_url_components: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        }
+      }
+    },
+    "api_and_system_contract": {
+      "L1_Reason": "Excluded due to a contract with an API or the System",
+      "L2_Patterns": {
+        "public_api_exposure": {
+          "description": "When a symbol is declared `public` or `open`, making it part of a framework's public-facing API for external modules.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["access_level: 'public'"],
+              ["access_level: 'open'"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "system_framework_override": {
+          "description": "When a method overrides a method from a system framework class (e.g., UIViewController's `viewDidLoad`).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["modifiers: contains 'override'", "inherits: contains 'UIViewController'"],
+              ["modifiers: contains 'override'", "inherits: contains 'UIView'"],
+              ["modifiers: contains 'override'", "inherits: contains 'UIControl'"],
+              ["modifiers: contains 'override'", "inherits: contains 'UITableViewCell'"],
+              ["modifiers: contains 'override'", "inherits: contains 'UICollectionViewCell'"],
+              ["modifiers: contains 'override'", "inherits: contains 'AppDelegate'"],
+              ["modifiers: contains 'override'", "inherits: contains 'SceneDelegate'"]
+            ],
+            "insufficient_single_evidence": [
+              "modifiers: contains 'override'"
+            ]
+          }
+        },
+        "protocol_requirement_implementation": {
+          "description": "When a symbol is an implementation of a requirement (method, property, etc.) defined in a protocol.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_protocol_requirement_impl: true"]
+            ],
+            "insufficient_single_evidence": [
+              "conforms: contains 'Codable'",
+              "conforms: contains 'Decodable'",
+              "conforms: contains 'Encodable'",
+              "conforms: contains 'Equatable'",
+              "conforms: contains 'Hashable'"
+            ]
+          }
+        },
+        "foreign_function_interface": {
+          "description": "When a function is exposed with a C ABI to be callable from other languages like C/C++ (e.g., via @_cdecl).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_ffi_entry: true"],
+              ["ffi_names: isNotEmpty"],
+              ["attributes: contains '@_cdecl'"],
+              ["attributes: contains '@_silgen_name'"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "test_runner_discovery": {
+          "description": "When a symbol follows a naming convention that the XCTest runner uses to discover and run tests.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["symbol_kind: 'class'", "inherits: contains 'XCTestCase'"],
+              ["symbol_kind: 'method'", "symbol_name: startsWith 'test'", "inherits: contains 'XCTestCase'"]
+            ],
+            "insufficient_single_evidence": [
+              "symbol_name: startsWith 'test'"
+            ]
+          }
+        }
+      }
+    },
+    "framework_internal_binding": {
+      "L1_Reason": "Excluded due to an internal framework binding mechanism",
+      "L2_Patterns": {
+        "swiftui_state_binding": {
+          "description": "When SwiftUI uses a property's name internally to track and bind view state (e.g., @State, @Binding, and modifiers like .onChange).",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["attributes: contains '@State'"],
+              ["attributes: contains '@Binding'"],
+              ["attributes: contains '@StateObject'"],
+              ["attributes: contains '@ObservedObject'"],
+              ["attributes: contains '@EnvironmentObject'"],
+              ["attributes: contains '@Published'"],
+              ["is_used_in_swiftui_binding_modifier: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "keypath_based_mechanism": {
+          "description": "When a property is accessed via a KeyPath, used by systems like KVO, Combine, or SwiftUI's List.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["keypath_refs: isNotEmpty"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        },
+        "ui_testing_and_accessibility_binding": {
+          "description": "When a name is used as an `accessibilityIdentifier` for UI testing or Accessibility systems to find UI elements.",
+          "sufficiency_rules": {
+            "sufficient_combinations": [
+              ["is_accessibility_identifier: true"]
+            ],
+            "insufficient_single_evidence": []
+          }
+        }
+      }
+    }
+  }
+}
