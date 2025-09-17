@@ -11,6 +11,7 @@ import concurrent.futures
 
 import prompts
 from gemini_handler.gemini_handler import GeminiHandler
+from claude_handler import ClaudeHandler
 
 # --- 설정 (Configuration) ---
 ANALYZER_EXECUTABLE = "./SwiftASTAnalyzer/.build/release/SwiftASTAnalyzer"
@@ -21,15 +22,23 @@ OUTPUT_DIR = Path("./output")
 # 생성기별 디렉토리 경로
 GEMINI_CODE_DIR = OUTPUT_DIR / "generated_code" / "gemini_generated"
 CLAUDE_CODE_DIR = OUTPUT_DIR / "generated_code" / "claude_generated"
+OLD_GEMINI_CODE_DIR = OUTPUT_DIR / "generated_code" / "old_gemini_generated"
+OLD_CLAUDE_CODE_DIR = OUTPUT_DIR / "generated_code" / "old_claude_generated"
+
 GEMINI_INPUTS_DIR = OUTPUT_DIR / "inputs" / "gemini_generated"
 CLAUDE_INPUTS_DIR = OUTPUT_DIR / "inputs" / "claude_generated"
+OLD_GEMINI_INPUTS_DIR = OUTPUT_DIR / "inputs" / "old_gemini_generated"
+OLD_CLAUDE_INPUTS_DIR = OUTPUT_DIR / "inputs" / "old_claude_generated"
+
 GEMINI_LABELS_DIR = OUTPUT_DIR / "outputs" / "gemini_generated"
 CLAUDE_LABELS_DIR = OUTPUT_DIR / "outputs" / "claude_generated"
+OLD_GEMINI_LABELS_DIR = OUTPUT_DIR / "outputs" / "old_gemini_generated"
+OLD_CLAUDE_LABELS_DIR = OUTPUT_DIR / "outputs" / "old_claude_generated"
 
 # 최종 데이터셋 파일 경로
 FINAL_DATASET_GEMINI_ONLY = OUTPUT_DIR / "gemini_only_dataset.jsonl"
 FINAL_DATASET_CLAUDE_ONLY = OUTPUT_DIR / "claude_only_dataset.jsonl"
-FINAL_DATASET_COMBINED = OUTPUT_DIR / "combined_dataset.jsonl"
+FINAL_DATASET_COMBINED = OUTPUT_DIR / "exclude.jsonl"
 
 
 # --- 헬퍼 함수 (Helper Functions) ---
@@ -130,6 +139,18 @@ def get_generator_paths(generator_type: str) -> dict:
             "inputs": CLAUDE_INPUTS_DIR,
             "labels": CLAUDE_LABELS_DIR
         }
+    elif generator_type == "old_gemini":
+        return {
+            "code": OLD_GEMINI_CODE_DIR,
+            "inputs": OLD_GEMINI_INPUTS_DIR,
+            "labels": OLD_GEMINI_LABELS_DIR
+        }
+    elif generator_type == "old_claude":
+        return {
+            "code": OLD_CLAUDE_CODE_DIR,
+            "inputs": OLD_CLAUDE_INPUTS_DIR,
+            "labels": OLD_CLAUDE_LABELS_DIR
+        }
     else:
         raise ValueError(f"Unknown generator type: {generator_type}")
 
@@ -175,7 +196,7 @@ def safe_gemini_label_request(prompt: str) -> str | None:
     print("    - Calling Gemini for label generation...")
     try:
         prompt_config = {"messages": [{"role": "user", "parts": [prompt]}]}
-        response = GeminiHandler.ask(prompt_config, model_name="gemini-1.5-pro-latest")
+        response = GeminiHandler.ask(prompt_config, model_name="gemini-2.5-pro")
 
         if not response or not response.strip():
             return None
@@ -195,6 +216,26 @@ def safe_gemini_label_request(prompt: str) -> str | None:
 
     except Exception as e:
         print(f"    ❌ Label generation request failed: {e}")
+        return None
+
+
+def safe_claude_code_request(prompt: str) -> str | None:
+    print("    - Calling Claude for code generation...")
+    try:
+        response = ClaudeHandler.ask(prompt)
+
+        if not response or not response.strip():
+            return None
+
+        # Swift 코드 블록 제거
+        code = re.sub(r"^\s*```swift\s*", "", response, flags=re.MULTILINE)
+        code = re.sub(r"\s*```\s*$", "", code, flags=re.MULTILINE)
+
+        final_code = code.strip()
+        return final_code if final_code else None
+
+    except Exception as e:
+        print(f"    ❌ Claude code generation request failed: {e}")
         return None
 
 
@@ -267,7 +308,44 @@ def create_generation_tasks(rules: dict) -> list:
     return tasks
 
 
+def process_old_code_files():
+    """
+    old_gemini_generated, old_claude_generated 디렉토리에서 기존 Swift 파일들을 찾아서 처리합니다.
+    """
+    old_tasks = []
+
+    for old_type in ["old_gemini", "old_claude"]:
+        paths = get_generator_paths(old_type)
+        code_dir = paths["code"]
+
+        if not code_dir.exists():
+            print(f"  - {old_type} 디렉토리가 존재하지 않습니다: {code_dir}")
+            continue
+
+        swift_files = list(code_dir.glob("*.swift"))
+        print(f"  - {old_type}에서 {len(swift_files)}개의 Swift 파일 발견")
+
+        for swift_file in swift_files:
+            # 파일명에서 .swift 확장자 제거하여 태스크 이름으로 사용
+            task_name = swift_file.stem
+
+            # 더미 태스크 생성 (기존 파일 처리용)
+            dummy_task = {
+                "type": "Existing_Code",
+                "content": {},
+                "filename": task_name
+            }
+
+            old_tasks.append((dummy_task, old_type, []))
+
+    return old_tasks
+
+
 def process_and_save_sample(task_info: tuple):
+    """
+    하나의 태스크와 생성기 타입에 대해 샘플을 생성하고,
+    중간 결과물(코드, 레이블)을 파일로 저장합니다.
+    """
     task, generator_type, safe_patterns = task_info
 
     task_type = task["type"]
@@ -285,69 +363,84 @@ def process_and_save_sample(task_info: tuple):
 
     print(f"  - [{generator_type.upper()}] `{filename}` ({task_type}) 샘플 생성 중...")
 
-    # 1. Swift 코드 생성/로드
+    # Swift 코드 로드 또는 생성
     swift_code = ""
-    if code_path.exists() and code_path.stat().st_size > 50:  # 최소 크기 체크
-        try:
-            swift_code = code_path.read_text(encoding='utf-8')
-        except Exception:
-            swift_code = ""
+    if generator_type.startswith("old_"):
+        # old 타입의 경우 기존 파일만 읽기
+        if code_path.exists() and code_path.stat().st_size > 10:
+            try:
+                swift_code = code_path.read_text(encoding='utf-8')
+            except Exception:
+                swift_code = ""
 
-    if not swift_code or not swift_code.strip():
-        if generator_type == "gemini":
-            code_gen_func = safe_gemini_code_request
-        else:
-            print(f"    ⚠️ Skipping {generator_type} - not implemented")
-            return
-
-        # 프롬프트 생성
-        if task_type == "Sufficient_Positive":
-            prompt = prompts.GENERATE_SUFFICIENT_POSITIVE_CODE_PROMPT.format(
-                pattern_description=content['pattern']['description'],
-                evidence_list=json.dumps(content['evidence'])
-            )
-        elif task_type == "Insufficient_Positive":
-            prompt = prompts.GENERATE_INSUFFICIENT_POSITIVE_CODE_PROMPT.format(
-                pattern_description=content['pattern']['description'],
-                evidence_list=json.dumps(content['evidence'])
-            )
-        elif task_type == "Clear_Negative":
-            prompt = prompts.GENERATE_NEGATIVE_CODE_PROMPT.format(
-                pattern_description=content['pattern']['description']
-            )
-        elif task_type == "Combined_Positive":
-            p1, p2 = content['pattern1'], content['pattern2']
-            p1_evidence = p1.get('sufficiency_rules', {}).get('sufficient_combinations', [[]])[0]
-            p2_evidence = p2.get('sufficiency_rules', {}).get('sufficient_combinations', [[]])[0]
-            prompt = prompts.GENERATE_COMBINED_CODE_PROMPT.format(
-                pattern1_description=p1['description'],
-                pattern1_evidence=json.dumps(p1_evidence),
-                pattern2_description=p2['description'],
-                pattern2_evidence=json.dumps(p2_evidence)
-            )
-        else:
-            print(f"    ⚠️ Unknown task type: {task_type}")
-            return
-
-        swift_code = code_gen_func(prompt)
         if not swift_code or not swift_code.strip():
-            print(f"    ❌ Failed to generate Swift code")
+            print(f"    ❌ No existing code found for old generator type")
             return
+    else:
+        # 새로운 타입의 경우 기존 코드 재사용 또는 새로 생성
+        if code_path.exists() and code_path.stat().st_size > 10:
+            print(f"    - Reusing existing Swift code.")
+            try:
+                swift_code = code_path.read_text(encoding='utf-8')
+            except Exception:
+                swift_code = ""
 
-        # 코드 저장
-        try:
-            code_path.write_text(swift_code, encoding='utf-8')
-        except Exception as e:
-            print(f"    ❌ Failed to save code: {e}")
-            return
+        if not swift_code or not swift_code.strip():
+            if generator_type == "gemini":
+                code_gen_func = safe_gemini_code_request
+            elif generator_type == "claude":
+                code_gen_func = safe_claude_code_request
+            else:
+                print(f"    ⚠️ Skipping {generator_type} - not implemented")
+                return
 
-    # 2. Swift 분석기 실행
+            # 프롬프트 선택 및 포맷팅
+            if task_type == "Sufficient_Positive":
+                prompt = prompts.GENERATE_SUFFICIENT_POSITIVE_CODE_PROMPT.format(
+                    pattern_description=content['pattern']['description'],
+                    evidence_list=json.dumps(content['evidence'])
+                )
+            elif task_type == "Insufficient_Positive":
+                prompt = prompts.GENERATE_INSUFFICIENT_POSITIVE_CODE_PROMPT.format(
+                    pattern_description=content['pattern']['description'],
+                    evidence_list=json.dumps(content['evidence'])
+                )
+            elif task_type == "Clear_Negative":
+                prompt = prompts.GENERATE_NEGATIVE_CODE_PROMPT.format(
+                    pattern_description=content['pattern']['description']
+                )
+            elif task_type == "Combined_Positive":
+                p1, p2 = content['pattern1'], content['pattern2']
+                p1_evidence = p1.get('sufficiency_rules', {}).get('sufficient_combinations', [[]])[0]
+                p2_evidence = p2.get('sufficiency_rules', {}).get('sufficient_combinations', [[]])[0]
+                prompt = prompts.GENERATE_COMBINED_CODE_PROMPT.format(
+                    pattern1_description=p1['description'],
+                    pattern1_evidence=json.dumps(p1_evidence),
+                    pattern2_description=p2['description'],
+                    pattern2_evidence=json.dumps(p2_evidence)
+                )
+            else:
+                print(f"    ⚠️ Unknown task type: {task_type}")
+                return
+
+            swift_code = code_gen_func(prompt)
+            if not swift_code or not swift_code.strip():
+                print(f"    ❌ Failed to generate Swift code")
+                return
+
+            try:
+                code_path.write_text(swift_code, encoding='utf-8')
+            except Exception as e:
+                print(f"    ❌ Failed to save code: {e}")
+                return
+
+    # AST 분석
     symbol_info_json = run_swift_analyzer_on_code(swift_code)
     if not symbol_info_json:
         print(f"    ❌ Swift analyzer failed or returned invalid JSON")
         return
 
-    # 3. 라벨 생성 프롬프트 저장
+    # 레이블 생성
     try:
         label_prompt = prompts.GENERATE_LABEL_PROMPT.format(
             swift_code=swift_code,
@@ -358,29 +451,30 @@ def process_and_save_sample(task_info: tuple):
         print(f"    ❌ Failed to save input prompt: {e}")
         return
 
-    # 4. 라벨 생성 및 저장
+    # 라벨 생성 (항상 Gemini 2.5 Pro 사용)
     final_output_json_str = safe_gemini_label_request(label_prompt)
     if not final_output_json_str:
         print(f"    ❌ Failed to generate valid label")
-        # 빈 파일 대신 실패 표시 저장
         try:
             label_path.write_text('{"error": "generation_failed"}', encoding='utf-8')
         except Exception:
             pass
         return
 
+    # 최종 저장
     try:
         label_path.write_text(final_output_json_str, encoding='utf-8')
         print(f"    ✅ Saved artifacts for `{filename}`.")
     except Exception as e:
         print(f"    ❌ Failed to save label: {e}")
+        return
 
 
 def assemble_final_dataset():
     print("\n📦 최종 데이터셋 조립 중...")
-    datasets = {"gemini": [], "claude": [], "combined": []}
+    datasets = {"gemini": [], "claude": [], "old_gemini": [], "old_claude": [], "combined": []}
 
-    for generator in ["gemini", "claude"]:
+    for generator in ["gemini", "claude", "old_gemini", "old_claude"]:
         paths = get_generator_paths(generator)
         label_files = sorted(list(paths["labels"].glob("*.json")))
         if not label_files:
@@ -465,6 +559,17 @@ def assemble_final_dataset():
             for entry in datasets["claude"]:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+        # old 데이터들도 별도 파일로 저장
+        old_gemini_file = OUTPUT_DIR / "old_gemini_dataset.jsonl"
+        with open(old_gemini_file, "w", encoding="utf-8") as f:
+            for entry in datasets["old_gemini"]:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        old_claude_file = OUTPUT_DIR / "old_claude_dataset.jsonl"
+        with open(old_claude_file, "w", encoding="utf-8") as f:
+            for entry in datasets["old_claude"]:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
         with open(FINAL_DATASET_COMBINED, "w", encoding="utf-8") as f:
             for entry in datasets["combined"]:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -475,8 +580,8 @@ def assemble_final_dataset():
 
 
 def main_pipeline():
-    # 디렉토리 생성
-    for gen in ["gemini", "claude"]:
+    # 디렉토리 생성 (old 디렉토리들도 포함)
+    for gen in ["gemini", "claude", "old_gemini", "old_claude"]:
         paths = get_generator_paths(gen)
         for path in paths.values():
             path.mkdir(parents=True, exist_ok=True)
@@ -488,18 +593,25 @@ def main_pipeline():
     safe_patterns = load_safe_patterns(SAFE_PATTERNS_FILE)
     tasks = create_generation_tasks(rules)
 
-    GENERATORS_TO_RUN = ["gemini"]
+    GENERATORS_TO_RUN = ["gemini", "claude"]
 
-    # 태스크 리스트 생성
+    # 1. 새로운 태스크 리스트 생성
     full_task_list = []
     for gen_type in GENERATORS_TO_RUN:
         for task in tasks:
             full_task_list.append((task, gen_type, safe_patterns))
 
+    # 2. 기존 old 파일들 처리 태스크 추가
+    print("📁 기존 old 파일들 검색 중...")
+    old_tasks = process_old_code_files()
+    full_task_list.extend(old_tasks)
+
     print(f"총 {len(full_task_list)}개 태스크 처리 시작...")
+    print(f"  - 새로운 태스크: {len(full_task_list) - len(old_tasks)}개")
+    print(f"  - 기존 old 파일: {len(old_tasks)}개")
 
     # 병렬 처리로 샘플 생성
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:  # 동시 요청 수 줄임
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         list(tqdm(
             executor.map(process_and_save_sample, full_task_list),
             total=len(full_task_list),
@@ -510,7 +622,11 @@ def main_pipeline():
     counts = assemble_final_dataset()
 
     print(f"\n✨ 파이프라인 종료!")
-    print(f"   - Gemini 데이터: {counts['gemini']}개, Claude 데이터: {counts['claude']}개, 총 {counts['combined']}개 생성 완료.")
+    print(f"   - Gemini 데이터: {counts['gemini']}개")
+    print(f"   - Claude 데이터: {counts['claude']}개")
+    print(f"   - Old Gemini 데이터: {counts['old_gemini']}개")
+    print(f"   - Old Claude 데이터: {counts['old_claude']}개")
+    print(f"   - 총 Combined 데이터: {counts['combined']}개 생성 완료.")
 
 
 if __name__ == "__main__":
