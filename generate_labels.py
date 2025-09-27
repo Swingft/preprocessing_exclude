@@ -6,14 +6,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from gemini_handler.gemini_handler import GeminiHandler, GeminiBlockedError, GeminiResponseEmptyError
 
 # --- 설정 ---
-# 준비된 헤더 파일이 있는 입력 디렉토리
-INPUT_DIRECTORY = Path("./input_headers")
+# 준비된 헤더 파일이 있는 입력 디렉토리 (분할 처리된 파일들)
+INPUT_DIRECTORY = Path("./processed_headers")
 
 # 생성된 정답 레이블(JSON)을 저장할 출력 디렉토리
 OUTPUT_DIRECTORY = Path("./output_labels")
 
 # 사용할 Gemini 모델 이름
-MODEL_NAME = "gemini-2.5-pro"
+MODEL_NAME = "gemini-2.5-flash"
 
 # 병렬 처리 설정
 MAX_WORKERS = 10  # 동시에 처리할 스레드 수
@@ -152,7 +152,7 @@ def create_labels_fast():
     """
     if not INPUT_DIRECTORY.is_dir():
         print(f"❌ 오류: 입력 디렉토리 '{INPUT_DIRECTORY}'를 찾을 수 없습니다.")
-        print("'prepare_headers.py'를 먼저 실행하여 헤더 파일을 준비해주세요.")
+        print("먼저 split_large_headers.py를 실행하여 헤더 파일을 준비해주세요.")
         return
 
     OUTPUT_DIRECTORY.mkdir(exist_ok=True)
@@ -167,6 +167,7 @@ def create_labels_fast():
 
     print(f"🚀 총 {total_files}개의 헤더 파일을 {MAX_WORKERS}개 스레드로 병렬 처리합니다.")
     print(f"⚙️  배치 크기: {BATCH_SIZE}, 최대 재시도: {MAX_RETRIES}회")
+    print(f"🔧 모델: {MODEL_NAME}")
 
     start_time = time.time()
     success_count = 0
@@ -217,6 +218,7 @@ def create_labels_fast():
     print(f"❌ 실패: {failed_count}개")
     print(f"📊 성공률: {success_count / total_files * 100:.1f}%")
     print(f"🚀 평균 처리 속도: {total_files / elapsed_time:.2f}개/초")
+    print(f"💰 예상 비용: 약 ${(success_count * 0.001):.2f}")
     print(f"{'=' * 60}")
 
 
