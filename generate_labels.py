@@ -1,6 +1,8 @@
 import json
 import time
+import asyncio
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from gemini_handler.gemini_handler import GeminiHandler, GeminiBlockedError, GeminiResponseEmptyError
 
 # --- 설정 ---
@@ -10,12 +12,18 @@ INPUT_DIRECTORY = Path("./input_headers")
 # 생성된 정답 레이블(JSON)을 저장할 출력 디렉토리
 OUTPUT_DIRECTORY = Path("./output_labels")
 
-# 사용할 Gemini 모델 이름 (가장 성능이 좋은 모델로 지정)
+# 사용할 Gemini 모델 이름
 MODEL_NAME = "gemini-2.5-pro"
+
+# 병렬 처리 설정
+MAX_WORKERS = 10  # 동시에 처리할 스레드 수
+BATCH_SIZE = 50  # 한 번에 처리할 파일 수
+REQUEST_DELAY = 0.1  # API 요청 간 딜레이 (초)
+MAX_RETRIES = 3  # 실패 시 최대 재시도 횟수
+
 # ---
 
-# Gemini API에 전송할 프롬프트 템플릿
-# 역할, 목표, 규칙, 출력 형식, 피해야 할 사항을 매우 명확하고 구조적으로 지시합니다.
+# Gemini API에 전송할 프롬프트 템플릿 (기존과 동일)
 PROMPT_TEMPLATE = """
 ## ROLE & GOAL
 You are a high-precision static code analyzer specializing in Objective-C. Your SOLE task is to parse the provided Objective-C header file content and extract a definitive list of all public API identifiers that MUST be excluded from code obfuscation. Accuracy is critical, as any error will break the client application.
@@ -67,79 +75,150 @@ Analyze the following content and provide ONLY the raw JSON array as your respon
 """
 
 
-def create_labels():
+def process_single_file(header_path: Path, output_path: Path, file_index: int, total_files: int) -> tuple[bool, str]:
     """
-    input_headers 디렉토리의 각 헤더 파일에 대해 Gemini API를 호출하여
-    제외 식별자 목록을 추출하고 JSON 파일로 저장합니다.
+    단일 헤더 파일을 처리하는 함수
+
+    Returns:
+        tuple[bool, str]: (성공 여부, 결과 메시지)
+    """
+    try:
+        # 이미 처리된 파일인지 확인
+        if output_path.exists():
+            return True, f"[{file_index}/{total_files}] ⏭️ 건너뜀: {header_path.name} (이미 존재)"
+
+        # 파일 내용 읽기 (여러 인코딩 시도)
+        content = None
+        for encoding in ['utf-8', 'latin-1', 'cp1252', 'mac-roman']:
+            try:
+                content = header_path.read_text(encoding=encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if content is None:
+            return False, f"[{file_index}/{total_files}] ❌ 인코딩 오류: {header_path.name} (모든 인코딩 실패)"
+
+        if not content.strip():
+            return False, f"[{file_index}/{total_files}] ⚠️ 건너뜀: {header_path.name} (빈 파일)"
+
+        # 프롬프트 구성
+        full_prompt = PROMPT_TEMPLATE.format(header_content=content)
+        prompt_config = {
+            "messages": [
+                {"role": "user", "parts": [full_prompt]}
+            ]
+        }
+
+        # 재시도 로직과 함께 API 호출
+        for attempt in range(MAX_RETRIES):
+            try:
+                response_text = GeminiHandler.ask(prompt_config, model_name=MODEL_NAME)
+
+                # JSON 응답 처리
+                clean_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
+                json.loads(clean_response)  # 유효성 검사
+
+                # 파일 저장
+                GeminiHandler.save_content(clean_response, str(output_path))
+                return True, f"[{file_index}/{total_files}] ✅ 완료: {header_path.name}"
+
+            except json.JSONDecodeError:
+                # JSON이 아닌 경우 텍스트로 저장
+                GeminiHandler.save_content(response_text, str(output_path.with_suffix(".txt")))
+                return False, f"[{file_index}/{total_files}] ⚠️ JSON 오류: {header_path.name} (텍스트로 저장)"
+
+            except (GeminiBlockedError, GeminiResponseEmptyError) as e:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)  # 지수 백오프
+                    continue
+                return False, f"[{file_index}/{total_files}] ❌ API 오류: {header_path.name} - {e}"
+
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(1)
+                    continue
+                return False, f"[{file_index}/{total_files}] ❌ 예외: {header_path.name} - {e}"
+
+        return False, f"[{file_index}/{total_files}] ❌ 모든 재시도 실패: {header_path.name}"
+
+    except Exception as e:
+        return False, f"[{file_index}/{total_files}] ❌ 파일 처리 오류: {header_path.name} - {e}"
+
+
+def create_labels_fast():
+    """
+    배치 처리와 병렬 처리를 사용하여 빠르게 레이블을 생성합니다.
     """
     if not INPUT_DIRECTORY.is_dir():
-        print(f"오류: 입력 디렉토리 '{INPUT_DIRECTORY}'를 찾을 수 없습니다.")
+        print(f"❌ 오류: 입력 디렉토리 '{INPUT_DIRECTORY}'를 찾을 수 없습니다.")
         print("'prepare_headers.py'를 먼저 실행하여 헤더 파일을 준비해주세요.")
         return
 
     OUTPUT_DIRECTORY.mkdir(exist_ok=True)
-    print(f"'{OUTPUT_DIRECTORY}' 디렉토리를 확인/생성했습니다.")
+    print(f"📁 '{OUTPUT_DIRECTORY}' 디렉토리를 확인/생성했습니다.")
 
     header_files = list(INPUT_DIRECTORY.glob("*.h"))
     total_files = len(header_files)
-    print(f"총 {total_files}개의 헤더 파일을 처리합니다.")
 
-    for i, header_path in enumerate(header_files):
-        print(f"\n--- [{i + 1}/{total_files}] 파일 처리 시작: {header_path.name} ---")
-        output_path = OUTPUT_DIRECTORY / header_path.with_suffix(".json").name
+    if total_files == 0:
+        print("❌ 처리할 헤더 파일이 없습니다.")
+        return
 
-        if output_path.exists():
-            print(f"결과 파일이 이미 존재하여 건너뜁니다: {output_path.name}")
-            continue
+    print(f"🚀 총 {total_files}개의 헤더 파일을 {MAX_WORKERS}개 스레드로 병렬 처리합니다.")
+    print(f"⚙️  배치 크기: {BATCH_SIZE}, 최대 재시도: {MAX_RETRIES}회")
 
-        try:
-            content = header_path.read_text(encoding="utf-8")
-            if not content.strip():
-                print("파일 내용이 비어있어 건너뜁니다.")
-                continue
+    start_time = time.time()
+    success_count = 0
+    failed_count = 0
 
-            # 프롬프트 템플릿에 헤더 파일 내용 삽입
-            full_prompt = PROMPT_TEMPLATE.format(header_content=content)
+    # 배치 단위로 처리
+    for batch_start in range(0, total_files, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, total_files)
+        batch_files = header_files[batch_start:batch_end]
 
-            # GeminiHandler가 요구하는 형식에 맞게 프롬프트 구성
-            prompt_config = {
-                "messages": [
-                    {"role": "user", "parts": [full_prompt]}
-                ]
-            }
+        print(f"\n📦 배치 {batch_start // BATCH_SIZE + 1} 처리 중... ({batch_start + 1}-{batch_end}/{total_files})")
 
-            # Gemini API 호출
-            response_text = GeminiHandler.ask(prompt_config, model_name=MODEL_NAME)
+        # ThreadPoolExecutor를 사용한 병렬 처리
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            # 작업 제출
+            future_to_file = {}
+            for i, header_path in enumerate(batch_files):
+                output_path = OUTPUT_DIRECTORY / header_path.with_suffix(".json").name
+                file_index = batch_start + i + 1
 
-            # 응답이 유효한 JSON인지 확인
-            try:
-                # 불필요한 마크다운 제거 및 JSON 파싱 시도
-                clean_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-                json.loads(clean_response)  # 파싱이 성공하는지만 확인
+                future = executor.submit(process_single_file, header_path, output_path, file_index, total_files)
+                future_to_file[future] = header_path
 
-                # 원본 텍스트를 그대로 저장 (파싱 성공 시)
-                GeminiHandler.save_content(clean_response, str(output_path))
-                print(f"✅ 성공: 정답 레이블을 '{output_path.name}'에 저장했습니다.")
+                # API 과부하 방지를 위한 딜레이
+                time.sleep(REQUEST_DELAY)
 
-            except json.JSONDecodeError:
-                print(f"⚠️ 경고: API가 유효하지 않은 JSON을 반환했습니다. 원본 텍스트를 저장합니다.")
-                # JSON이 아니더라도 나중에 분석할 수 있도록 원본 텍스트를 저장
-                GeminiHandler.save_content(response_text, str(output_path.with_suffix(".txt")))
+            # 결과 처리
+            for future in as_completed(future_to_file):
+                success, message = future.result()
+                print(message)
 
+                if success:
+                    success_count += 1
+                else:
+                    failed_count += 1
 
-        except (GeminiBlockedError, GeminiResponseEmptyError) as e:
-            print(f"❌ 오류: API 응답이 비어있거나 차단되었습니다. ({header_path.name}) - {e}")
-        except FileNotFoundError:
-            print(f"❌ 오류: 파일을 찾을 수 없습니다. ({header_path.name})")
-        except Exception as e:
-            print(f"❌ 처리 중 예상치 못한 오류가 발생했습니다. ({header_path.name}) - {e}")
+        # 배치 간 휴식
+        if batch_end < total_files:
+            print(f"⏸️  배치 완료. 2초 대기 중...")
+            time.sleep(2)
 
-        # API 과부하 방지를 위한 간단한 딜레이
-        time.sleep(1)
-
-    print("\n모든 작업이 완료되었습니다.")
+    # 최종 결과 출력
+    elapsed_time = time.time() - start_time
+    print(f"\n{'=' * 60}")
+    print(f"🎉 모든 작업이 완료되었습니다!")
+    print(f"⏱️  처리 시간: {elapsed_time:.2f}초")
+    print(f"✅ 성공: {success_count}개")
+    print(f"❌ 실패: {failed_count}개")
+    print(f"📊 성공률: {success_count / total_files * 100:.1f}%")
+    print(f"🚀 평균 처리 속도: {total_files / elapsed_time:.2f}개/초")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
-    create_labels()
-
+    create_labels_fast()

@@ -20,34 +20,42 @@ INSTRUCTION = "Extract all public API identifiers from the Objective-C header fi
 
 def build_alpaca_dataset():
     """
-    input_headers와 output_labels 디렉토리의 파일들을 조합하여
+    input_headers 디렉토리의 헤더 파일들과 해당하는 output_labels의 JSON 파일들을 조합하여
     LoRA 학습을 위한 Alpaca 형식의 최종 데이터셋을 생성합니다.
     """
-    if not INPUT_DIRECTORY.is_dir() or not LABEL_DIRECTORY.is_dir():
-        print(f"오류: '{INPUT_DIRECTORY}' 또는 '{LABEL_DIRECTORY}' 디렉토리를 찾을 수 없습니다.")
-        print("'prepare_headers.py'와 'generate_labels.py'를 먼저 실행해주세요.")
+    if not INPUT_DIRECTORY.is_dir():
+        print(f"오류: '{INPUT_DIRECTORY}' 디렉토리를 찾을 수 없습니다.")
+        print("'prepare_headers.py'를 먼저 실행해주세요.")
+        return
+
+    if not LABEL_DIRECTORY.is_dir():
+        print(f"오류: '{LABEL_DIRECTORY}' 디렉토리를 찾을 수 없습니다.")
+        print("'generate_labels.py'를 먼저 실행해주세요.")
         return
 
     print("Alpaca 데이터셋 생성을 시작합니다...")
     dataset_entries = 0
 
-    # 레이블 파일을 기준으로 순회 (레이블이 성공적으로 생성된 파일만 처리)
-    json_files = list(LABEL_DIRECTORY.glob("*.json"))
-    total_files = len(json_files)
+    # 헤더 파일을 기준으로 순회 (input_headers에 모든 파일이 있음)
+    header_files = list(INPUT_DIRECTORY.glob("*.h"))
+    total_files = len(header_files)
 
     if total_files == 0:
-        print("처리할 레이블 파일이 없습니다. 'generate_labels.py'를 실행했는지 확인하세요.")
+        print("처리할 헤더 파일이 없습니다. 'prepare_headers.py'를 실행했는지 확인하세요.")
         return
+
+    print(f"총 {total_files}개의 헤더 파일을 발견했습니다.")
 
     # 최종 데이터셋을 JSONL 파일로 저장
     try:
         with OUTPUT_FILE.open("w", encoding="utf-8") as f:
-            for i, label_path in enumerate(json_files):
-                header_name = label_path.with_suffix(".h").name
-                header_path = INPUT_DIRECTORY / header_name
+            for i, header_path in enumerate(header_files):
+                # 해당하는 레이블 파일 경로
+                label_name = header_path.with_suffix(".json").name
+                label_path = LABEL_DIRECTORY / label_name
 
-                if not header_path.exists():
-                    print(f"  - [{i + 1}/{total_files}] ⚠️ 경고: 레이블 파일에 해당하는 헤더 파일을 찾을 수 없습니다. 건너뛰기: {header_path.name}")
+                if not label_path.exists():
+                    print(f"  - [{i + 1}/{total_files}] ⚠️ 경고: 레이블 파일을 찾을 수 없습니다. 건너뛰기: {label_name}")
                     continue
 
                 try:
@@ -58,6 +66,7 @@ def build_alpaca_dataset():
                         print(f"  - [{i + 1}/{total_files}] ℹ️ 정보: 헤더 또는 레이블 파일 내용이 비어있어 건너뜁니다: {header_path.name}")
                         continue
 
+                    # JSON 형식이 올바른지 검증
                     json.loads(label_content_string)
 
                     data_entry = {
@@ -77,10 +86,16 @@ def build_alpaca_dataset():
                     print(f"  - [{i + 1}/{total_files}] ❌ 오류: 파일 처리 중 예상치 못한 오류 발생 ({header_path.name}): {e}")
 
         print(f"\n✅ 작업 완료! 총 {dataset_entries}개의 샘플을 '{OUTPUT_FILE}' 파일에 저장했습니다.")
+        print(f"성공률: {dataset_entries}/{total_files} ({dataset_entries / total_files * 100:.1f}%)")
+
+        if dataset_entries < total_files:
+            missing_labels = total_files - dataset_entries
+            print(f"\n📝 참고: {missing_labels}개의 헤더 파일에 대한 레이블이 누락되었습니다.")
+            print("누락된 파일들에 대해 'generate_labels.py'를 다시 실행해보세요.")
+
     except Exception as e:
         print(f"\n❌ 최종 파일 저장 중 오류가 발생했습니다: {e}")
 
 
 if __name__ == "__main__":
     build_alpaca_dataset()
-
