@@ -4,3 +4,10 @@
 __pycache__/
 *.pyc
 output/
+Pods/
+
+input_headers/
+output_labels/
+header.jsonl
+
+
